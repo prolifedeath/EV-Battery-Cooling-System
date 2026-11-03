@@ -1,0 +1,89 @@
+
+import pandas as pd
+import numpy as np
+import joblib
+
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
+
+np.random.seed(42)
+
+data_size = 1500
+
+voltage = np.random.uniform(5.8, 8.6, data_size)
+current = np.random.uniform(-3.5, 3.5, data_size)
+temperature = np.random.uniform(10, 65, data_size)
+
+conditions = []
+
+for v, c, t in zip(voltage, current, temperature):
+
+    if t >= 50 or abs(c) >= 3.0 or v < 6.2 or v > 8.5:
+        conditions.append("Critical")
+
+    elif t >= 40 or abs(c) >= 2.0 or v < 6.6 or v > 8.4:
+        conditions.append("Warning")
+
+    else:
+        conditions.append("Normal")
+
+df = pd.DataFrame({
+    "Voltage": voltage,
+    "Current": current,
+    "Temperature": temperature,
+    "Condition": conditions
+})
+
+df.to_csv("synthetic_data.csv", index=False)
+
+X = df[["Voltage", "Current", "Temperature"]]
+y = df["Condition"]
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+model = RandomForestClassifier(
+    n_estimators=200,
+    random_state=42,
+    class_weight="balanced"
+)
+
+model.fit(X_train, y_train)
+
+predictions = model.predict(X_test)
+
+accuracy = accuracy_score(y_test, predictions)
+
+print("Model Accuracy:", round(accuracy * 100, 2), "%")
+print("\nClassification Report:")
+print(classification_report(y_test, predictions))
+
+joblib.dump(model, "battery_model.pkl")
+
+print("\nModel saved successfully!")
+
+def predict_battery(voltage, current, temperature):
+
+    input_data = pd.DataFrame([{
+        "Voltage": voltage,
+        "Current": current,
+        "Temperature": temperature
+    }])
+
+    prediction = model.predict(input_data)[0]
+
+    probability = model.predict_proba(input_data)[0]
+    confidence = max(probability) * 100
+
+    print("\nBattery Analysis")
+    print("Voltage:", voltage, "V")
+    print("Current:", current, "A")
+    print("Temperature:", temperature, "°C")
+    print("Battery Condition:", prediction)
+    print("Confidence:", round(confidence, 2), "%")
+
+    return prediction
+
+predict_battery(7.4, 0.8, 32)
