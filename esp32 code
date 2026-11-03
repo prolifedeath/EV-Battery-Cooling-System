@@ -1,0 +1,164 @@
+#define BLYNK_TEMPLATE_ID "TMPL3tePOnDza"
+#define BLYNK_TEMPLATE_NAME "New Template"
+#define BLYNK_AUTH_TOKEN "YOUR_DEVICE_AUTH_TOKEN"
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+#include <Wire.h>
+#include <Adafruit_INA219.h>
+
+char ssid[] = "YOUR_WIFI_NAME";
+char pass[] = "YOUR_WIFI_PASSWORD";
+
+// Actual sensor pin connections
+#define TEMP_PIN 34
+#define VOLTAGE_PIN 35
+#define RELAY_PIN 26
+
+// Active-LOW relay
+#define RELAY_ON LOW
+#define RELAY_OFF HIGH
+
+// Voltage sensor calibration
+#define VOLTAGE_DIVIDER_RATIO 5.0
+
+// Fan temperature thresholds
+#define FAN_ON_TEMP 35.0
+#define FAN_OFF_TEMP 33.0
+
+BlynkTimer timer;
+Adafruit_INA219 ina219;
+
+// Sensor readings
+float batteryVoltage = 0.0;
+float batteryCurrent = 0.0;
+float batteryPower = 0.0;
+float temperature = 0.0;
+
+bool fanStatus = false;
+bool temperatureValid = false;
+
+// Read battery voltage
+float readBatteryVoltage() {
+  int raw = analogReadMilliVolts(VOLTAGE_PIN);
+  float sensorVoltage = raw / 1000.0;
+
+  return sensorVoltage * VOLTAGE_DIVIDER_RATIO;
+}
+
+// Read battery current
+float readBatteryCurrent() {
+  return ina219.getCurrent_mA() / 1000.0;
+}
+
+// Read battery power
+float readBatteryPower() {
+  return ina219.getPower_mW() / 1000.0;
+}
+
+// Read LM35 temperature
+float readTemperature() {
+  int raw = analogReadMilliVolts(TEMP_PIN);
+
+  return raw / 10.0;
+}
+
+// Control fan using active-LOW relay
+void controlFan() {
+
+  if (!temperatureValid) {
+    fanStatus = false;
+  }
+  else if (temperature >= FAN_ON_TEMP) {
+    fanStatus = true;
+  }
+  else if (temperature <= FAN_OFF_TEMP) {
+    fanStatus = false;
+  }
+
+  digitalWrite(RELAY_PIN, fanStatus ? RELAY_ON : RELAY_OFF);
+}
+
+// Send sensor readings to Blynk
+void sendToBlynk() {
+
+  batteryVoltage = readBatteryVoltage();
+  batteryCurrent = readBatteryCurrent();
+  batteryPower = readBatteryPower();
+
+  temperature = readTemperature();
+
+  temperatureValid = (temperature >= 0.0 && temperature <= 100.0);
+
+  controlFan();
+
+  Blynk.virtualWrite(V0, batteryVoltage);
+  Blynk.virtualWrite(V1, batteryCurrent);
+  Blynk.virtualWrite(V2, temperature);
+  Blynk.virtualWrite(V3, fanStatus ? 1 : 0);
+  Blynk.virtualWrite(V4, batteryPower);
+
+  Serial.println("===== BATTERY MONITORING =====");
+
+  Serial.print("Battery Voltage: ");
+  Serial.print(batteryVoltage);
+  Serial.println(" V");
+
+  Serial.print("Battery Current: ");
+  Serial.print(batteryCurrent);
+  Serial.println(" A");
+
+  Serial.print("Battery Power: ");
+  Serial.print(batteryPower);
+  Serial.println(" W");
+
+  Serial.print("Battery Temperature: ");
+  Serial.print(temperature);
+  Serial.println(" C");
+
+  Serial.print("Temperature Sensor: ");
+  Serial.println(temperatureValid ? "VALID" : "CHECK SENSOR");
+
+  Serial.print("Cooling Fan: ");
+  Serial.println(fanStatus ? "ON" : "OFF");
+
+  Serial.println("==============================");
+}
+
+void setup() {
+
+  Serial.begin(115200);
+
+  // Set relay OFF before starting
+  digitalWrite(RELAY_PIN, HIGH);
+  pinMode(RELAY_PIN, OUTPUT);
+
+  analogReadResolution(12);
+
+  analogSetPinAttenuation(TEMP_PIN, ADC_11db);
+  analogSetPinAttenuation(VOLTAGE_PIN, ADC_11db);
+
+  Wire.begin(21, 22);
+
+  if (!ina219.begin()) {
+    Serial.println("ERROR: INA219 NOT DETECTED!");
+
+    while (true) {
+      digitalWrite(RELAY_PIN, HIGH);
+      delay(1000);
+    }
+  }
+
+  Serial.println("INA219 CONNECTED");
+
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
+  Serial.println("BLYNK CONNECTED");
+
+  timer.setInterval(2000L, sendToBlynk);
+}
+
+void loop() {
+  Blynk.run();
+  timer.run();
+}
